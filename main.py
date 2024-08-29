@@ -424,7 +424,10 @@ class AudioManager:
         menu.addSeparator()
         for file in [file for file in os.listdir(self.profiles_path) if file.startswith('profile') and file.endswith('.yaml')]:
             audio_option = file.replace('profiles_','').replace('.yaml','') if file != 'profiles.yaml' else 'profiles'
-            menu.addAction(f'Edit {audio_option}', lambda: self.__open_settings(file))
+            action = QAction(f'Edit {audio_option}', menu)
+            action.triggered.connect(lambda checked, arg=file: self.__open_settings(arg))
+            menu.addAction(action)
+
         menu.addSeparator()
 
         option_close = QAction("Close")
