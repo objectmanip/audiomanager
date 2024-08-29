@@ -1,0 +1,28 @@
+active: true
+capture_card:
+  mode_off: 0
+  mode_on: 1
+  state: false
+check_watched_application_state: true
+dev_log: false
+list_active_audio_sessions: false
+microphone_gain:
+  base: 66000
+  hear_through_offset: 21000
+microphone_name: TonorMicrophone
+profiles:
+  communications: true
+  mediaplayer: true
+  games: true
+  microphone: true
+port: 5000
+reset_volume_sessions: false
+speakername: Lautsprecher
+toggle_active_hotkey: ctrl+f11
+toggle_reset_hotkey: ctrl+f12
+transition_length: 30
+urls:
+  homeassistant:
+    toggle_off: http://192.168.178.42:8123/api/webhook/-Yb4Vy8eI_BlVARc29OdteR_3
+    toggle_on: http://192.168.178.42:8123/api/webhook/-Yb4Vy8eI_BlVARc29OdteR_4
+write_log: false

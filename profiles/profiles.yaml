@@ -1,0 +1,84 @@
+# app whose volume is controlled
+#   app and the volume to set the above apps volume to, the lowest matching is selected
+
+firefox:
+  standard:
+    headset: 1
+    speaker: 1
+  communications:
+    headset: 0.15
+    speaker: 0.15
+  hear_through:
+    headset: 0.3
+    speaker: 0.3
+
+signal:
+  standard:
+    headset: 1
+    speaker: 1
+  communications:
+    headset: 0.2
+    speaker: 0.2
+
+mediaplayer:
+  standard:
+    headset: 1
+    speaker: 1
+  firefox:
+    headset: 0.2
+    speaker: 0.3
+  communications:
+    headset: 0.1
+    speaker: 0.1
+  hear_through:
+    headset: 0.3
+    speaker: 0.3
+
+# atmgr.exe:
+#   standard:
+#     headset: 0.3
+#     speaker: 0.3
+
+games:
+  standard:
+    headset: 1
+    speaker: 1
+  mediaplayer:
+    headset: 0.15
+    speaker: 0.15
+  firefox:
+    headset: 0.1
+    speaker: 0.1
+  communications:
+    headset: 0
+    speaker: 0
+  hear_through:
+    headset: 0.3
+    speaker: 0.3
+  atmgr.exe:
+    headset: 0
+    speaker: 0
+
+# OBS-PassThrough
+# svchost:
+#   standard:
+#     headset: 0
+#     speaker: 0
+#   obs64.exe:
+#     headset: 0.7
+#     speaker: 0.7
+#   ts3client_win64:
+#     headset: 0.2
+#     speaker: 0.2
+#   discord:
+#     headset: 0.2
+#     speaker: 0.2
+#  ts3client_win64:
+#    headset: 0.3
+#    speaker: 0.3
+#  atmgr:
+#    headset: 0
+#    speaker: 0
+#  spotify:
+#    headset: 0.3
+#    speaker: 0.3
