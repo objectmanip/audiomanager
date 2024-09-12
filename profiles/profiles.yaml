@@ -1,7 +1,7 @@
 # app whose volume is controlled
 #   app and the volume to set the above apps volume to, the lowest matching is selected
 
-firefox:
+browser:
   standard:
     headset: 1
     speaker: 1
@@ -24,7 +24,7 @@ mediaplayer:
   standard:
     headset: 1
     speaker: 1
-  firefox:
+  browser:
     headset: 0.2
     speaker: 0.3
   communications:
@@ -46,7 +46,7 @@ games:
   mediaplayer:
     headset: 0.15
     speaker: 0.15
-  firefox:
+  browser:
     headset: 0.1
     speaker: 0.1
   communications:

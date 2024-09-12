@@ -5,23 +5,27 @@ import os
 import sys
 import time
 import yaml
-from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume, ISimpleAudioVolume
-from ctypes import cast, POINTER
-from comtypes import CLSCTX_ALL
+import platform
 from threading import Thread
 from PyQt5.QtGui import *
 from PyQt5.QtWidgets import QApplication, QAction, QMenu, QSystemTrayIcon
 from PyQt5.QtCore import QFile, QTextStream
 import subprocess
-import sounddevice
 import logging
 from logging.handlers import RotatingFileHandler
 from waitress import serve
 import requests
-from webhooks import app as webhook_app
-import win32api
-import win32gui
-
+if platform.system() == "Windows":
+    import win32api
+    import win32gui
+    from comtypes import CLSCTX_ALL
+    from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume, ISimpleAudioVolume
+    import sounddevice
+    from ctypes import cast, POINTER    
+    from webhooks import app as webhook_app
+elif platform.system() == "Linux":
+    import re
+    from modules.audiosessions.audiosession import AudioSession
 
 log = logging.getLogger("audiomanager")
 log.setLevel(logging.INFO)  
@@ -46,7 +50,11 @@ class AudioManager:
         self.config = {}
         self.hear_through_enabled = False
         self.__load_config()
-        subprocess.call(f'SoundVolumeView.exe /SetListenToThisDevice "{self.config["microphone_name"]}" 0', shell=True)
+        self.platform = platform.system()
+        if platform == 'Windows':
+            subprocess.call(f'SoundVolumeView.exe /SetListenToThisDevice "{self.config["microphone_name"]}" 0', shell=True)
+        elif platform == 'Linux':
+            pass
         self.volume_threads = {}
         self.keep_alive = True
         log.info("Initalized")
@@ -57,7 +65,8 @@ class AudioManager:
 
     def webhooker(self):
         # subprocess.call("waitress-serve --listen *:5000 wsgi:app")
-        serve(webhook_app, listen=f"*:{self.config['port']}")
+        if self.platform == 'Windows':
+            serve(webhook_app, listen=f"*:{self.config['port']}")
 
     def __toggle_hear_through(self):
         try:
@@ -77,8 +86,9 @@ class AudioManager:
         manages the combination of volume profiles and sets the volume
         :return:
         """
-        import pythoncom
-        pythoncom.CoInitialize()
+        if self.platform == 'Windows':
+            import pythoncom
+            pythoncom.CoInitialize()
 
         while self.keep_alive:
             self.__load_config()
@@ -112,12 +122,14 @@ class AudioManager:
 
                 if not target_session:
                     continue
+                # log.debug(f"Target session found: {target_session}")
                 # base volume to set to if no app is found, will be set to the lowest matched value
                 target_volume = self.volume_profiles[application_to_set]["standard"][current_audio_device]
                 profile_applications = self.volume_profiles[application_to_set]
                 for application_to_watch in profile_applications:
                     # skip if application is not running
                     session = self.__match_processes(application_to_watch)
+                    log.debug(f'Matching result {session} - {application_to_watch}, {application_to_set}')
                     # check if hear through is activated
                     if application_to_watch == "hear_through" and self.hear_through_enabled:
                         pass
@@ -128,9 +140,16 @@ class AudioManager:
                         break
                     elif not self.is_profile_active(application_to_watch):
                         continue
-                    elif (not session.State or session.SimpleAudioVolume.GetMute()) and self.config['check_watched_application_state']:
-                        # if session is not playing audio or muted
-                        continue
+                    elif self.platform == "Windows":
+                        if (not session.State or session.SimpleAudioVolume.GetMute()) and self.config['check_watched_application_state']:
+                            # if session is not playing audio or muted
+                            log.debug('Skpping because sessions is muted')
+                            continue
+                    elif self.platform == "Linux":
+                        if not session.State and self.config['check_watched_application_state']:
+                            # if session is not playing audio or muted
+                            log.debug('Skpping because sessions is muted')
+                            continue
 
                     # get the lowest volume for application
                     if profile_applications[application_to_watch][current_audio_device] < target_volume or \
@@ -161,48 +180,63 @@ class AudioManager:
         sets self.audio_sessions to a list of lists with (process_name, process_id) as elements
         :return:
         """
-        self.audio_sessions = AudioUtilities.GetAllSessions()
-        if self.config['list_active_audio_sessions']:
-            log.info("Active Audio Sessions")
-            for session in self.audio_sessions:
-                try:
-                    log.info(session.Process.name())
-                except AttributeError:
-                    pass
+        def get_application_parameter(application, parameter):
+            try:
+                substring = application.split(parameter)[1].split('\n')[0]
+            except IndexError:
+                log.debug('Failed to grab "{parameter}" from application')
+                return None
+            value = substring.strip('=: "')
+            log.debug(f'"{parameter}": "{value}"')
+            return value
+
+        if self.platform == 'Windows':
+            self.audio_sessions = AudioUtilities.GetAllSessions()
+            if self.config['list_active_audio_sessions']:
+                log.info("Active Audio Sessions")
+                for session in self.audio_sessions:
+                    try:
+                        log.info(session.Process.name())
+                    except AttributeError:
+                        pass
+        elif self.platform == "Linux":
+            result = subprocess.run(['pactl', 'list', 'sink-inputs'], stdout=subprocess.PIPE)
+            output = result.stdout.decode('utf-8')
+            applications = [application for application in output.split("Sink Input ") if application != ""]
+            self.audio_sessions = []
+            for application in applications:
+                name = get_application_parameter(application, 'node.name')
+                process = get_application_parameter(application, 'application.process.binary')
+                process_id = application.split("\n")[0].strip("# ")
+                state= True if get_application_parameter(application, 'Mute') == "no" else False
+                current_volume = int(re.search(r'(\d+)%', application.split('Volume')[1].split('\n')[0]).group(1))/100
+                self.audio_sessions.append(AudioSession(name=name, process=process, process_id=process_id, state=state, current_volume=current_volume))
 
     def __get_current_audio_device(self):
         """
 
         :return:
         """
-        sounddevice._terminate()
-        sounddevice._initialize()
-
-        if self.config['speakername'] in str(sounddevice.query_devices(sounddevice.default.device[1])):
-            try:
-                requests.post(self.config['urls']['homeassistant']['toggle_off'])
-            except:
-                return 'headset'
+        if self.platform == "Windows":
+            sounddevice._terminate()
+            sounddevice._initialize()
+            
+            if self.config['speakername'] in str(sounddevice.query_devices(sounddevice.default.device[1])):
+                try:
+                    requests.post(self.config['urls']['homeassistant']['toggle_off'])
+                except:
+                    return 'headset'
+                else:
+                    return 'speaker'
             else:
-                return 'speaker'
-        else:
-            try:
-                requests.post(self.config['urls']['homeassistant']['toggle_on'])
-            except:
-                return 'headset'
-            else:
-                return 'headset'
-
-    def __get_current_window(self):
-        pass
-
-    def __get_current_volume(self, audio_session) -> float:
-        """
-        returns the volume of the application
-        :param audio_session:
-        :return:
-        """
-        pass
+                try:
+                    requests.post(self.config['urls']['homeassistant']['toggle_on'])
+                except:
+                    return 'headset'
+                else:
+                    return 'headset'
+        elif self.platform == "Linux":
+            return "speaker"
 
     def __load_config(self):
         """
@@ -254,6 +288,7 @@ class AudioManager:
                             pass
                 # print(self.volume_profiles)
 
+                log.debug(f'Profiles: {self.volume_profiles}')
                 with open(os.path.join(self.profiles_path, "profiles_microphone.yaml"), "r", encoding="utf-8") as pf:
                     self.mic_profiles = yaml.load(pf, yaml.Loader)
                 if 'microphone' not in self.config['profiles']:
@@ -274,7 +309,7 @@ class AudioManager:
         :return:
         """
         named_sessions = []
-
+        
         for session in self.audio_sessions:
             try:
                 try:
@@ -282,12 +317,12 @@ class AudioManager:
                 except:
                     session_name = session.DisplayName
                 named_sessions.append([session, session_name])
-            except AttributeError:
-                pass
-
+            except AttributeError as e:
+                log.debug(f"AttributeError while adding session for matching")
+                log.debug(e)
+        log.debug([e[1] for e in named_sessions])
         matched_sessions = [session[0] for session in named_sessions if
                             process.lower() in session[1].lower()]
-
         if len(matched_sessions) > 1:
             for session in matched_sessions:
                 if session.State == 1:
@@ -332,9 +367,6 @@ class AudioManager:
         self.app.quit()
         exit()
 
-    def __restart(self):
-        os.execv(sys.executable, ['python'] + sys.argv)
-
     def __set_app_volume(self, audio_session, target_volume, watched_session = None):
         """
 
@@ -343,16 +375,18 @@ class AudioManager:
         :param watched_session:
         :return:
         """
-        # get audiosessions
-        # volume_element = audio_session._clt.QueryInterface(ISimpleAudioVolume)
-        try:
-            current_volume = round(audio_session.SimpleAudioVolume.GetMasterVolume(), 3)
-        except:
-            return
+        if self.platform == "Windows":
+            try:
+                current_volume = round(audio_session.SimpleAudioVolume.GetMasterVolume(), 3)
+            except:
+                return
+        elif self.platform == "Linux":
+            current_volume = audio_session.current_volume
+        
+        log.debug(f'{audio_session.name}, {target_volume}')
+
         if current_volume == target_volume or not self.config['active']:
             return
-
-
         volume_steps = (target_volume - current_volume)/self.config['transition_length']
         if volume_steps < 0:
             volume_steps *= (self.config['transition_length']/2)
@@ -361,31 +395,38 @@ class AudioManager:
             session_name = audio_session.Process.name()
         except:
             session_name = audio_session.DisplayName
-        # if watched_session:
-        #     log.info(f"Setting volume for {session_name} to {target_volume*100}% ({watched_session.Process.name()}, Active: {watched_session.State}, Muted: {watched_session.SimpleAudioVolume.GetMute()}).")
-        # else:
         log.info(f"Setting volume for {session_name} to {target_volume*100}%.")
 
         while (current_volume + volume_steps < target_volume and current_volume < target_volume) or \
                 (current_volume + volume_steps > target_volume and current_volume > target_volume):
-            audio_session.SimpleAudioVolume.SetMasterVolume(current_volume + volume_steps, None)
+            if self.platform == "Windows":
+                audio_session.SimpleAudioVolume.SetMasterVolume(current_volume + volume_steps, None)
+            elif self.platform == "Linux":
+                subprocess.run(['pactl', 'set-sink-input-volume', audio_session.Process.id, f'{(current_volume + volume_steps)*100}%'])
             current_volume += volume_steps
             time.sleep(.05)
-        audio_session.SimpleAudioVolume.SetMasterVolume(target_volume, None)
+        if self.platform == "Windows":
+            audio_session.SimpleAudioVolume.SetMasterVolume(target_volume, None)
+        elif self.platform == "Linux":
+            subprocess.run(['pactl', 'set-sink-input-volume', audio_session.Process.id, f'{(target_volume)*100}%'])
 
     def __set_capture_card_volume(self):
-        self.__get_audio_sessions()
-        process = self.__match_processes(process="svchost.exe")
-        volume = self.config['capture_card']['mode_on'] if self.config['capture_card']['state'] else self.config['capture_card']['mode_off']
-        self.__set_app_volume(process, int(volume))
+        if self.platform == "Windows":
+            self.__get_audio_sessions()
+            process = self.__match_processes(process="svchost.exe")
+            volume = self.config['capture_card']['mode_on'] if self.config['capture_card']['state'] else self.config['capture_card']['mode_off']
+            self.__set_app_volume(process, int(volume))
+        elif self.platform == "Linux":
+            pass
 
     def __set_microphone_gain(self, gain):
-        if self.dev_log: log.info(f"Setting mic gain to {gain}")
-        # os.system(f"nircmdc.exe loop 1 250 setsysvolume {gain} default_record")
-        try:
-            subprocess.call(f"nircmdc.exe loop 1 250 setsysvolume {gain} default_record", shell=True)
-        except PermissionError:
-            log.info("Error: Microphone access denied")
+        if self.platform == "Windows":
+            if self.dev_log: log.info(f"Setting mic gain to {gain}")
+            # os.system(f"nircmdc.exe loop 1 250 setsysvolume {gain} default_record")
+            try:
+                subprocess.call(f"nircmdc.exe loop 1 250 setsysvolume {gain} default_record", shell=True)
+            except PermissionError:
+                log.info("Error: Microphone access denied")
 
     def __toggle_settings(self, para: str):
         try:

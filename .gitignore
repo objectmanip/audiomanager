@@ -150,3 +150,19 @@ cython_debug/
 #  and can be added to the global gitignore or merged into this file.  For a more nuclear
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
+config/config.yaml
+audiomanager.exe
+.idea/modules.xml
+.idea/misc.xml
+.idea/inspectionProfiles/profiles_settings.xml
+.idea/audiomanager.iml
+.idea/.name
+config/config.yaml
+main-no console.pyw
+nircmd.exe
+NirCmd.chm
+nircmdc.exe
+output.wav
+SoundVolumeView.cfg
+SoundVolumeView.exe
+test_wincoreaudio.py
