@@ -166,3 +166,4 @@ output.wav
 SoundVolumeView.cfg
 SoundVolumeView.exe
 test_wincoreaudio.py
+config/config.yaml
